@@ -998,7 +998,7 @@ if page == "New Meeting":
 
         transcript = st.text_area("Paste meeting transcript", height=260,
                                    value=st.session_state.get("transcribed_text", ""),
-                                   placeholder="Iman: Let's finalize the dashboard by Friday...\nRahul: I'll handle the backend...")
+                                   placeholder="Smran: Let's finalize the dashboard by Friday...\nRahul: I'll handle the backend...")
 
     with st.expander("🎤 Or upload a meeting recording instead"):
         audio_file = st.file_uploader("Upload audio (mp3, wav, m4a)", type=["mp3", "wav", "m4a", "ogg"])
@@ -1022,13 +1022,13 @@ if page == "New Meeting":
                         except Exception as e:
                             st.error(f"Transcription failed: {e}")
 
-    SAMPLE_TRANSCRIPT = """Iman: Let's finalize the sales dashboard by Friday, that's the priority this week.
+    SAMPLE_TRANSCRIPT = """Smran: Let's finalize the sales dashboard by Friday, that's the priority this week.
 Rahul: I'll handle the backend API integration.
 Priya: I can also take the backend integration if Rahul is busy with the deployment.
-Iman: Good, let's also decide on the color scheme - I think dark navy fits our brand.
+Smran: Good, let's also decide on the color scheme - I think dark navy fits our brand.
 Rahul: Actually I already committed to using a light theme last week, so let's stick with that instead.
 Priya: I'll prepare the demo video, need it done by Thursday since the submission is Friday.
-Iman: Sounds good, let's also loop in the design team about the icons, that's still open.
+Smran: Sounds good, let's also loop in the design team about the icons, that's still open.
 """
 
     sample_col, run_col = st.columns([1, 1])
