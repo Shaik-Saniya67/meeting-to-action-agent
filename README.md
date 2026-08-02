@@ -104,6 +104,7 @@ Enter a free Gemini API key from [aistudio.google.com/apikey](https://aistudio.g
 
 - 🔗 **Cross-meeting memory** — catch a contradiction even when it spans two different meetings
 - 🏷️ **Auto meeting categorization** — Project / Client / HR / Sprint Planning
+- 📨 One-click email delivery — send the drafted follow-up and personalized emails straight to all meeting participants using SMTP or an email service API, instead of just copying them out
 - 📨 **Direct Slack/email integration** — send follow-ups automatically instead of just drafting them
 
 ---
