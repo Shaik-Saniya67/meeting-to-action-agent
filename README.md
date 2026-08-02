@@ -1,73 +1,121 @@
+<div align="center">
+
 # 🗒️ AI Meeting-to-Action Agent
 
-**Submission for:** AI Builders Challenge with IBM Bob — Wildcard Track (Intelligent Systems for the Future of Work)
-**Built by:** Shaik Saniya
+### Turn any meeting into decisions, owners, deadlines, and done — automatically.
 
-## Problem Statement
-Teams lose time and accountability after every meeting: decisions go undocumented, action items get forgotten, double-assigned, or left with no owner and no deadline, and someone has to manually write follow-ups and calendar invites. Existing "AI meeting summarizer" tools stop at a text summary — they don't clarify ambiguity, flag risk, or take action.
+*Submission for the AI Builders Challenge with IBM Bob*
+**Wildcard Track — Intelligent Systems for the Future of Work**
 
-## Solution Description
-An AI agent that takes a raw meeting transcript **or audio recording** and produces a full action system, not just a summary:
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini_API-8E75FF?style=for-the-badge&logo=googlegemini&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-07405E?style=for-the-badge&logo=sqlite&logoColor=white)
+![License](https://img.shields.io/badge/Built_with-IBM_Bob-1F70C1?style=for-the-badge&logo=ibm&logoColor=white)
 
-- **Audio upload** — upload an .mp3/.wav/.m4a meeting recording; Gemini's native multimodal audio understanding transcribes it directly, no separate speech-to-text service needed
-- **Structured minutes** — summary, topics, decisions, open questions
-- **AI Clarification Agent** — flags exactly which fields are ambiguous ("Who owns this task?", "What is the expected deadline?") instead of silently guessing
-- **Priority Detection with reasoning** — every action item gets a High/Medium/Low priority *and* a one-sentence explanation of why
-- **Conflict Detection + AI Resolution Suggestions** — flags duplicate task ownership and contradicting decisions, then proposes a concrete, evidence-grounded resolution
-- **Risk Detector** — flags risky situations proactively (unfinalized owner on a near-term deadline, unresolved blocking decisions)
-- **Meeting Effectiveness Score** — a 0–100 score with a visual breakdown of what helped or hurt it (decisions taken, deadlines defined, conflicts, open questions)
-- **AI Recommendations** — meeting-level next steps (sequencing, follow-ups, ownership gaps)
-- **Workload Distribution** — task counts per person, with an overload warning and rebalancing suggestion
-- **Execution Plan & Due Soon views** — action items automatically grouped into Today / Tomorrow / by-date buckets
-- **Meeting Insights & Analytics Dashboard** — totals, completion rate, productivity, conflicts, and risks across every meeting
-- **AI Chat with meeting history** — ask "who owns the dashboard?" or "what's still pending?" and get answers grounded in every saved meeting
-- **Personalized follow-up emails** — one tailored email per person
-- **Multi-format export** — PDF minutes, DOCX report, CSV action item list, and ICS calendar events (deadlines like "Thursday" are resolved to real calendar dates)
-- **Action status tracker** — Pending / In Progress / Done, tracked across meetings
-- **Shared demo key with quota guard** — judges can try the app without needing their own API key, protected by a daily generation limit
+</div>
 
-This closes the full agentic loop: **Listen → Understand → Detect → Reason → Recommend → Act → Export.**
+---
 
-## AI Approach & Architecture
-- **Model:** Google Gemini (`gemini-flash-latest`), used with structured JSON output mode for reliable, schema-consistent extraction, and its native multimodal capability for direct audio transcription.
-- **Single-pass structured extraction** captures minutes, action items (with priority reasoning and clarification flags), conflicts (with AI-generated resolution recommendations), risks, and meeting-level recommendations together — grounding every recommendation in evidence from the same transcript.
-- **Deterministic post-processing in Python** resolves relative deadlines ("Thursday," "tomorrow") into absolute calendar dates using the meeting date, computes the Meeting Effectiveness Score, and groups action items into Execution Plan / Due Soon views — so scoring and date math don't depend on the LLM.
-- **Storage:** SQLite, with action items tracked independently of their source meeting so dashboards reflect live status across all meetings.
-- **Frontend:** Streamlit with a custom glassmorphism design system (CSS injected via `st.markdown`) — no extra frontend framework required.
+## 💡 The Problem
 
-## Selected Challenge Theme
-Wildcard — Intelligent Systems for the Future of Work
+Every team loses something after a meeting — a decision nobody wrote down, a task nobody officially owns, two people quietly doing the same work, a deadline mentioned once and never logged anywhere.
 
-## How IBM Bob Was Used
-IBM Bob was used throughout development to assist with architecture planning, scaffolding the multi-page Streamlit UI, debugging the SQLite schema migrations, and refining the structured-output prompts for the clarification agent, priority reasoning, conflict resolution, and risk detection features.
+Most "AI meeting summarizer" tools stop at a shorter transcript. They don't ask what's missing. They don't catch contradictions. They don't tell you what to do next.
 
-## Tech Stack
-- Python, Streamlit
-- Google Gemini API (`google-generativeai`) — `gemini-flash-latest`
-- SQLite
-- fpdf2 (PDF export), python-docx (DOCX export), stdlib csv/datetime (CSV + ICS export)
+**This one does.**
 
-## Local Setup
+---
+
+## ✨ What It Actually Does
+
+<table>
+<tr><td width="40">🎤</td><td><b>Listens</b></td><td>Upload .mp3 / .wav / .m4a — transcribed directly via Gemini's native audio understanding. No separate speech-to-text needed.</td></tr>
+<tr><td>📋</td><td><b>Understands</b></td><td>Structured minutes: summary, topics, decisions made, open questions.</td></tr>
+<tr><td>⚠️</td><td><b>Asks when unclear</b></td><td>The <b>AI Clarification Agent</b> flags exactly what's missing — "Who owns this?", "What's the deadline?" — instead of silently guessing.</td></tr>
+<tr><td>🔍</td><td><b>Detects</b></td><td>Priority scoring with reasoning, duplicate-ownership conflicts, contradicting decisions, and proactive risk flags.</td></tr>
+<tr><td>🤖</td><td><b>Reasons</b></td><td>Every conflict gets an <b>AI-recommended resolution</b>, grounded in transcript evidence — not just "here's a problem."</td></tr>
+<tr><td>⭐</td><td><b>Scores</b></td><td>A 0–100 <b>Meeting Effectiveness Score</b> with a visual breakdown of what helped and what hurt.</td></tr>
+<tr><td>📅</td><td><b>Plans</b></td><td>Action items auto-sorted into an <b>Execution Plan</b> (Today / Tomorrow / by date) and a <b>Due Soon</b> view.</td></tr>
+<tr><td>👥</td><td><b>Balances</b></td><td><b>Workload Distribution</b> flags overloaded teammates and suggests who to hand work to.</td></tr>
+<tr><td>📤</td><td><b>Exports</b></td><td>One click → PDF, DOCX, CSV, and real calendar events (.ics) — "Thursday" becomes an actual date.</td></tr>
+<tr><td>🧠</td><td><b>Remembers</b></td><td><b>AI Chat</b> answers questions like "who owns the dashboard?" grounded in your full meeting history.</td></tr>
+</table>
+
+> **The full loop:** Listen → Understand → Detect → Reason → Recommend → Act → Export
+> Not a shorter transcript — an actual outcome.
+
+---
+
+## 🏗️ How It's Built
+
+| Layer | Choice | Why |
+|---|---|---|
+| 🧠 **AI Model** | Google Gemini (`gemini-flash-latest`) | Single structured-JSON pass returns minutes, priorities, conflicts, risks, and recommendations together — grounded in one read of the transcript |
+| 🎙️ **Audio** | Gemini native multimodal | No separate Whisper/STT pipeline required |
+| 🧮 **Scoring & Dates** | Pure Python | Effectiveness score and deadline resolution are deterministic — stable, explainable, not left to the LLM |
+| 🗄️ **Storage** | SQLite | Action items tracked independently, so dashboards reflect live status across *every* meeting |
+| 🎨 **Frontend** | Streamlit + custom CSS | Glassmorphism design system — built to look like a real product, not a prototype |
+| 🔑 **Demo Access** | Host-side shared key + daily quota guard | Judges can try it instantly, no API key required |
+
+---
+
+## 🛠️ Tech Stack
+
+```
+Python · Streamlit · Google Gemini API (gemini-flash-latest)
+SQLite · fpdf2 · python-docx
+```
+
+## 🏆 Challenge Theme
+**Wildcard — Intelligent Systems for the Future of Work**
+
+## 🤝 How IBM Bob Was Used
+IBM Bob supported the build throughout — architecture planning, scaffolding the multi-page Streamlit interface, debugging the SQLite schema as it evolved, and refining the structured-output prompts behind the clarification agent, priority reasoning, conflict resolution, and risk detection.
+
+---
+
+## 🚀 Running It Locally
+
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
-Enter a free Gemini API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) in the sidebar, or set one as a host secret (see deployment section) so visitors don't need their own.
 
-## Demo Flow (for video)
-1. Load the sample transcript (or upload a short audio clip), set the meeting date
-2. Click "Generate Minutes"
-3. Walk through: Meeting Effectiveness Score → Insights → action item cards with clarification flags → **conflict detected with AI recommendation** → **risk detected** → AI Recommendations
-4. Show Workload Distribution and the overload warning
-5. Download the PDF, DOCX, CSV, and calendar (.ics) exports
-6. Open "AI Chat" and ask a question about the meeting history
-7. Open "Analytics" to show cross-meeting stats
+Enter a free Gemini API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) in the sidebar — or set one as a host secret so visitors don't need their own.
 
-## Known Limitations
-- Streamlit Community Cloud's filesystem is ephemeral — `meetings.db` and the host quota counter reset on redeploy or app restart. For a persistent hackathon-grade demo this is fine; for production use, swap SQLite for a hosted DB.
-- Cross-meeting conflict detection (catching a contradiction against a *previous* meeting, not just within the current transcript) is a planned next step.
+---
 
-## Future Improvements
-- Cross-meeting memory for conflict/contradiction detection
-- Automatic meeting category classification (Project / Client / HR / Sprint Planning / etc.)
-- Slack/email integration to auto-send follow-ups instead of just drafting them
+## 🎬 Demo Walkthrough
+
+| Step | Action |
+|---|---|
+| 1️⃣ | Load the sample transcript, or upload a short audio clip |
+| 2️⃣ | Click **Generate Minutes** |
+| 3️⃣ | Walk through the Effectiveness Score → action items → a clarification flag → a conflict with its AI recommendation → a detected risk |
+| 4️⃣ | Show **Workload Distribution** and the overload warning |
+| 5️⃣ | Download a PDF, a DOCX, and a calendar file |
+| 6️⃣ | Open **AI Chat** and ask a real question about the meeting |
+| 7️⃣ | Open **Analytics** to show it working across multiple meetings |
+
+---
+
+## 🔮 What's Next
+
+- 🔗 **Cross-meeting memory** — catch a contradiction even when it spans two different meetings
+- 🏷️ **Auto meeting categorization** — Project / Client / HR / Sprint Planning
+- 📨 **Direct Slack/email integration** — send follow-ups automatically instead of just drafting them
+
+---
+
+## 📌 A Note on Storage
+
+> Streamlit Community Cloud's filesystem is temporary — the meeting database and daily quota counter reset on app restart or redeploy. Perfectly fine for a hackathon demo; for production, swap SQLite for a hosted database.
+
+---
+
+<div align="center">
+
+**Built with 🗒️ + 🤖 for the AI Builders Challenge with IBM Bob**
+
+</div>
