@@ -29,6 +29,12 @@ import io
 import csv
 from datetime import datetime, timedelta
 
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+
 # --------------------------------------------------------------------------
 # CONFIG
 # --------------------------------------------------------------------------
@@ -36,6 +42,8 @@ st.set_page_config(page_title="Meeting-to-Action AI Agent", page_icon="🗒️",
 
 DB_PATH = os.path.join(os.getcwd(), "meetings.db")
 MODEL_NAME = "gemini-flash-latest"
+GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
+GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"
 USAGE_FILE = os.path.join(os.getcwd(), "host_usage.json")
 HOST_QUOTA_LIMIT = 15  # AI generations per day allowed on the shared host demo key
 
@@ -488,7 +496,24 @@ def _clean_json_text(text):
     return text.strip()
 
 
-def extract_minutes(api_key, transcript):
+def _is_quota_error(e):
+    """Detect a Gemini rate-limit / quota-exhaustion error so we know when to fall back to Groq,
+    rather than falling back on every kind of failure (e.g. a bad prompt or a real outage)."""
+    msg = str(e).lower()
+    indicators = ["429", "quota", "rate limit", "resourceexhausted", "resource_exhausted",
+                  "exceeded", "too many requests"]
+    return any(ind in msg for ind in indicators)
+
+
+def _get_groq_client(groq_api_key):
+    if not GROQ_AVAILABLE:
+        raise RuntimeError("Groq fallback unavailable — the 'groq' package isn't installed.")
+    return Groq(api_key=groq_api_key)
+
+
+# ---- Gemini implementations (primary) ----
+
+def _gemini_extract_minutes(api_key, transcript):
     model = get_model(api_key)
     prompt = EXTRACTION_PROMPT.format(transcript=transcript)
     response = model.generate_content(
@@ -499,7 +524,7 @@ def extract_minutes(api_key, transcript):
     return json.loads(_clean_json_text(response.text))
 
 
-def draft_email(api_key, analysis):
+def _gemini_draft_email(api_key, analysis):
     model = get_model(api_key)
     prompt = EMAIL_PROMPT.format(analysis=json.dumps(analysis))
     response = model.generate_content(
@@ -510,7 +535,7 @@ def draft_email(api_key, analysis):
     return response.text.strip()
 
 
-def draft_personalized_emails(api_key, analysis):
+def _gemini_draft_personalized_emails(api_key, analysis):
     model = get_model(api_key)
     prompt = PERSONALIZED_EMAIL_PROMPT.format(analysis=json.dumps(analysis))
     response = model.generate_content(
@@ -519,6 +544,121 @@ def draft_personalized_emails(api_key, analysis):
         request_options={"timeout": 40},
     )
     return json.loads(_clean_json_text(response.text)).get("emails", [])
+
+
+def _gemini_ask_about_meetings(api_key, prompt):
+    model = get_model(api_key)
+    response = model.generate_content(
+        prompt,
+        generation_config={"temperature": 0.3},
+        request_options={"timeout": 40},
+    )
+    return response.text.strip()
+
+
+def _gemini_transcribe_audio(api_key, audio_bytes, mime_type):
+    model = get_model(api_key)
+    audio_part = {"mime_type": mime_type, "data": audio_bytes}
+    prompt = (
+        "Transcribe this meeting recording as accurately as possible. "
+        "Label speakers if you can distinguish different voices (e.g. 'Speaker 1:', 'Speaker 2:'), "
+        "or use inferred names if someone addresses another person by name. "
+        "Return plain text only — no commentary, no markdown."
+    )
+    response = model.generate_content(
+        [audio_part, prompt],
+        request_options={"timeout": 120},
+    )
+    return response.text.strip()
+
+
+# ---- Groq implementations (fallback, used only when Gemini's quota is exhausted) ----
+
+def _groq_extract_minutes(groq_api_key, transcript):
+    client = _get_groq_client(groq_api_key)
+    prompt = EXTRACTION_PROMPT.format(transcript=transcript)
+    response = client.chat.completions.create(
+        model=GROQ_MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.3,
+    )
+    return json.loads(_clean_json_text(response.choices[0].message.content))
+
+
+def _groq_draft_email(groq_api_key, analysis):
+    client = _get_groq_client(groq_api_key)
+    prompt = EMAIL_PROMPT.format(analysis=json.dumps(analysis))
+    response = client.chat.completions.create(
+        model=GROQ_MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _groq_draft_personalized_emails(groq_api_key, analysis):
+    client = _get_groq_client(groq_api_key)
+    prompt = PERSONALIZED_EMAIL_PROMPT.format(analysis=json.dumps(analysis))
+    response = client.chat.completions.create(
+        model=GROQ_MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.5,
+    )
+    return json.loads(_clean_json_text(response.choices[0].message.content)).get("emails", [])
+
+
+def _groq_ask_about_meetings(groq_api_key, prompt):
+    client = _get_groq_client(groq_api_key)
+    response = client.chat.completions.create(
+        model=GROQ_MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _groq_transcribe_audio(groq_api_key, audio_bytes, mime_type):
+    client = _get_groq_client(groq_api_key)
+    ext_map = {"audio/mpeg": "audio.mp3", "audio/wav": "audio.wav",
+               "audio/mp4": "audio.m4a", "audio/ogg": "audio.ogg"}
+    filename = ext_map.get(mime_type, "audio.mp3")
+    response = client.audio.transcriptions.create(
+        file=(filename, audio_bytes),
+        model=GROQ_WHISPER_MODEL,
+        response_format="text",
+    )
+    return str(response).strip()
+
+
+# ---- Public functions: try Gemini first, fall back to Groq only on a quota/rate-limit error ----
+
+def extract_minutes(api_key, transcript, groq_api_key=None):
+    try:
+        return _gemini_extract_minutes(api_key, transcript), "gemini"
+    except Exception as e:
+        if groq_api_key and _is_quota_error(e):
+            return _groq_extract_minutes(groq_api_key, transcript), "groq"
+        raise
+
+
+def draft_email(api_key, analysis, groq_api_key=None):
+    try:
+        return _gemini_draft_email(api_key, analysis), "gemini"
+    except Exception as e:
+        if groq_api_key and _is_quota_error(e):
+            return _groq_draft_email(groq_api_key, analysis), "groq"
+        raise
+
+
+def draft_personalized_emails(api_key, analysis, groq_api_key=None):
+    try:
+        return _gemini_draft_personalized_emails(api_key, analysis), "gemini"
+    except Exception as e:
+        if groq_api_key and _is_quota_error(e):
+            return _groq_draft_personalized_emails(groq_api_key, analysis), "groq"
+        raise
 
 
 CHAT_PROMPT = """You are an AI co-worker who has attended every meeting on this team and remembers all of them.
@@ -534,7 +674,7 @@ Answer concisely, in plain text (no markdown fences).
 """
 
 
-def ask_about_meetings(api_key, question, meeting_contexts):
+def ask_about_meetings(api_key, question, meeting_contexts, groq_api_key=None):
     history_parts = []
     for title, mdate, result_json in meeting_contexts:
         r = json.loads(result_json)
@@ -549,33 +689,25 @@ def ask_about_meetings(api_key, question, meeting_contexts):
             f"Action items: {items_str}\n"
         )
     history = "\n---\n".join(history_parts) if history_parts else "No meetings recorded yet."
-
-    model = get_model(api_key)
     prompt = CHAT_PROMPT.format(history=history, question=question)
-    response = model.generate_content(
-        prompt,
-        generation_config={"temperature": 0.3},
-        request_options={"timeout": 40},
-    )
-    return response.text.strip()
+
+    try:
+        return _gemini_ask_about_meetings(api_key, prompt), "gemini"
+    except Exception as e:
+        if groq_api_key and _is_quota_error(e):
+            return _groq_ask_about_meetings(groq_api_key, prompt), "groq"
+        raise
 
 
-def transcribe_audio(api_key, audio_bytes, mime_type):
-    """Transcribe a meeting recording using Gemini's native audio understanding
-    (no separate speech-to-text service needed)."""
-    model = get_model(api_key)
-    audio_part = {"mime_type": mime_type, "data": audio_bytes}
-    prompt = (
-        "Transcribe this meeting recording as accurately as possible. "
-        "Label speakers if you can distinguish different voices (e.g. 'Speaker 1:', 'Speaker 2:'), "
-        "or use inferred names if someone addresses another person by name. "
-        "Return plain text only — no commentary, no markdown."
-    )
-    response = model.generate_content(
-        [audio_part, prompt],
-        request_options={"timeout": 120},
-    )
-    return response.text.strip()
+def transcribe_audio(api_key, audio_bytes, mime_type, groq_api_key=None):
+    """Transcribe a meeting recording. Tries Gemini's native audio understanding first;
+    falls back to Groq's Whisper API if Gemini's quota is exhausted."""
+    try:
+        return _gemini_transcribe_audio(api_key, audio_bytes, mime_type), "gemini"
+    except Exception as e:
+        if groq_api_key and _is_quota_error(e):
+            return _groq_transcribe_audio(groq_api_key, audio_bytes, mime_type), "groq"
+        raise
 
 
 # --------------------------------------------------------------------------
@@ -965,6 +1097,22 @@ with st.sidebar:
     else:
         st.caption("⚠️ No API key set — enter one above to use the app.")
 
+    with st.expander("🔁 Backup AI provider (optional)"):
+        st.caption("If Gemini's quota runs out, automatically retry with Groq instead of failing.")
+        user_provided_groq_key = st.text_input(
+            "Groq API Key", type="password", label_visibility="collapsed",
+            placeholder="Groq API Key (optional)",
+            help="Free at console.groq.com/keys — used only if Gemini hits a quota/rate-limit error."
+        )
+        groq_host_key = st.secrets.get("GROQ_API_KEY", "")
+        groq_api_key = user_provided_groq_key.strip() or groq_host_key
+        if not GROQ_AVAILABLE:
+            st.caption("⚠️ 'groq' package not installed — add it to requirements.txt to enable this.")
+        elif groq_api_key:
+            st.caption("✅ Backup ready — will kick in automatically if Gemini's quota is exceeded.")
+        else:
+            st.caption("No backup key set — Gemini quota errors will show normally.")
+
     st.markdown('<hr>', unsafe_allow_html=True)
     st.markdown('<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,0.5);margin-bottom:6px;">NAVIGATE</div>', unsafe_allow_html=True)
     page = st.radio("Navigate", ["New Meeting", "Past Meetings", "Open Action Items", "AI Chat", "Analytics"],
@@ -998,7 +1146,7 @@ if page == "New Meeting":
 
         transcript = st.text_area("Paste meeting transcript", height=260,
                                    value=st.session_state.get("transcribed_text", ""),
-                                   placeholder="Smran: Let's finalize the dashboard by Friday...\nRahul: I'll handle the backend...")
+                                   placeholder="Saniya: Let's finalize the dashboard by Friday...\nRahul: I'll handle the backend...")
 
     with st.expander("🎤 Or upload a meeting recording instead"):
         audio_file = st.file_uploader("Upload audio (mp3, wav, m4a)", type=["mp3", "wav", "m4a", "ogg"])
@@ -1015,20 +1163,24 @@ if page == "New Meeting":
                                         "m4a": "audio/mp4", "ogg": "audio/ogg"}
                             ext = audio_file.name.split(".")[-1].lower()
                             mime_type = mime_map.get(ext, "audio/mpeg")
-                            transcribed = transcribe_audio(api_key, audio_file.read(), mime_type)
+                            transcribed, used_provider = transcribe_audio(
+                                api_key, audio_file.read(), mime_type, groq_api_key=groq_api_key
+                            )
                             st.session_state["transcribed_text"] = transcribed
+                            if used_provider == "groq":
+                                st.info("⚡ Gemini's quota was exceeded — used Groq as a backup.")
                             st.success("Transcribed! Review it below, then click Generate Minutes.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Transcription failed: {e}")
 
-    SAMPLE_TRANSCRIPT = """Smran: Let's finalize the sales dashboard by Friday, that's the priority this week.
+    SAMPLE_TRANSCRIPT = """Saniya: Let's finalize the sales dashboard by Friday, that's the priority this week.
 Rahul: I'll handle the backend API integration.
 Priya: I can also take the backend integration if Rahul is busy with the deployment.
-Smran: Good, let's also decide on the color scheme - I think dark navy fits our brand.
+Saniya: Good, let's also decide on the color scheme - I think dark navy fits our brand.
 Rahul: Actually I already committed to using a light theme last week, so let's stick with that instead.
 Priya: I'll prepare the demo video, need it done by Thursday since the submission is Friday.
-Smran: Sounds good, let's also loop in the design team about the icons, that's still open.
+Saniya: Sounds good, let's also loop in the design team about the icons, that's still open.
 """
 
     sample_col, run_col = st.columns([1, 1])
@@ -1049,14 +1201,16 @@ Smran: Sounds good, let's also loop in the design team about the icons, that's s
         else:
             with st.spinner("Analyzing transcript..."):
                 try:
-                    result = extract_minutes(api_key, transcript)
-                    email = draft_email(api_key, result)
+                    result, used_provider_1 = extract_minutes(api_key, transcript, groq_api_key=groq_api_key)
+                    email, used_provider_2 = draft_email(api_key, result, groq_api_key=groq_api_key)
                     result["_email_draft"] = email
                     meeting_id = save_meeting(title or "Untitled Meeting", meeting_date, meeting_priority, transcript, result)
                     st.session_state["last_result"] = result
                     st.session_state["last_meeting_id"] = meeting_id
                     st.session_state["last_meeting_date"] = meeting_date
                     st.session_state["last_title"] = title or "Untitled Meeting"
+                    if "groq" in (used_provider_1, used_provider_2):
+                        st.info("⚡ Gemini's quota was exceeded partway through — Groq filled in as backup.")
                     st.success(f"Minutes generated and saved (Meeting #{meeting_id})")
                 except Exception as e:
                     st.error(f"Something went wrong: {e}")
@@ -1246,8 +1400,10 @@ Smran: Sounds good, let's also loop in the design team about the icons, that's s
                 if guard_host_quota(using_host_key):
                     with st.spinner("Writing personalized emails..."):
                         try:
-                            emails = draft_personalized_emails(api_key, result)
+                            emails, used_provider = draft_personalized_emails(api_key, result, groq_api_key=groq_api_key)
                             st.session_state["personalized_emails"] = emails
+                            if used_provider == "groq":
+                                st.info("⚡ Gemini's quota was exceeded — used Groq as a backup.")
                         except Exception as e:
                             st.error(f"Couldn't generate personalized emails: {e}")
 
@@ -1430,7 +1586,9 @@ elif page == "AI Chat":
                 st.session_state["chat_log"].append(("user", question))
                 with st.spinner("Checking meeting history..."):
                     try:
-                        answer = ask_about_meetings(api_key, question, contexts)
+                        answer, used_provider = ask_about_meetings(api_key, question, contexts, groq_api_key=groq_api_key)
+                        if used_provider == "groq":
+                            answer += "\n\n_⚡ Gemini's quota was exceeded — answered using Groq as a backup._"
                     except Exception as e:
                         answer = f"Something went wrong: {e}"
                 st.session_state["chat_log"].append(("assistant", answer))
